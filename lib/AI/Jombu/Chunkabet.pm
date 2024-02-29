@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 use Exporter qw(import);
-our @EXPORT = qw(chunk_strength chunk_beats chunk_vowel);
+our @EXPORT = qw(chunk_felicity chunk_beats chunk_vowel);
 
 =head1 NAME
 
@@ -152,14 +152,14 @@ our %chunkabet = (
 
 =head1 EXPORTED FUNCTIONS
 
-=head2 chunk_strength (string, [position])
+=head2 chunk_felicity (string, [position])
 
-Given a string and optional position (initial, middle, or final) retrieves the strength of that combination from the chunkabet. If the position is omitted, the
-strongest position will be returned: "w-initial" is wow and "w-final" is strong, so the strength of "w" as a cluster is wow.
+Given a string and optional position (initial, middle, or final) retrieves the felicity of that combination from the chunkabet. If the position is omitted, the
+most felicitous position will be returned: "w-initial" is wow and "w-final" is strong, so the felicity of "w" as a cluster is wow.
 
 =cut
 
-sub chunk_strength {
+sub chunk_felicity {
    my ($chunk, $pos) = @_;
    if (defined $pos) {
       my $s = $chunkabet{"$chunk-$pos"};
@@ -169,7 +169,7 @@ sub chunk_strength {
    
    # We could speed this up by precalculating these and just putting them in the chunkabet
    my $s = 'no';
-   foreach my $alt (chunk_strength ($chunk, 'initial'), chunk_strength ($chunk, 'middle'), chunk_strength ($chunk, 'final')) {
+   foreach my $alt (chunk_felicity ($chunk, 'initial'), chunk_felicity ($chunk, 'middle'), chunk_felicity ($chunk, 'final')) {
       $s = $alt if chunk_beats ($alt, $s);
    }
    return $s;
