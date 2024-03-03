@@ -4,10 +4,10 @@ use strict;
 use warnings;
 use Test::More;
 
-plan tests => 1;
+plan tests => 2;
 
 BEGIN {
-    #use_ok( 'AI::Jombu' ) || print "Bail out!\n";
+    use_ok( 'AI::Jombu' ) || print "Bail out!\n";
     use_ok( 'AI::Jombu::Chunkabet' ) || print "Bail out!\n";
 }
 

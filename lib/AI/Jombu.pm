@@ -26,12 +26,36 @@ appropriate semunit types (and their codelets) and other optional things like a 
 
 =head1 SUBROUTINES/METHODS
 
-=head2 new
+=head2 new (initial string)
+
+Jombu is called with a string containing the initial jumble.
 
 =cut
 
 sub new {
+   my ($class, $init) = @_;
+   my $self = bless ({}, $class);
+   $self->_init_({typereg => {'letter', 'AI::Jombu::Letter',
+                             },
+                  init => $init
+                 });
 }
+
+=head2 parse_setup (string)
+
+Jombu has a much easier initial setup structure, so we can save a lot of time by having a parser to split the letters out into unit specs.
+
+=cut
+
+sub parse_setup {
+   my $self = shift;
+   my $units = [];
+   foreach (split //, $_[0]) {
+      push @$units, ['letter', undef, $_, undef];
+   }
+   return Iterator::Records->new ($units, ['type', 'id', 'data', 'frame']);
+}
+
 
 
 =head1 AUTHOR
