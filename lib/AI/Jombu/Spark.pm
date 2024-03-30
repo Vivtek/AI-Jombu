@@ -69,10 +69,16 @@ sub post_spark_checker {
    my $ts = shift;
    my $desc = shift;
    my $spark = shift;
+   my $parent;
+   if (ref $desc) {
+      $parent = $desc;
+      $desc = $parent->{desc};
+   }
    AI::TerracedScan::Codelet->post_new ($ts, {
       type => 'spark',
       name => 'spark-checker',
       desc => defined $desc ? $desc : '',
+      origin => defined $parent ? $parent->{origin} : '',
       urgency => 'normal',
       frame => { spark => $spark },
       callback => sub { my $cr = shift; return sub { handle_spark_checker ( $ts, $cr ); }; },

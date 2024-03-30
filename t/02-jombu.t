@@ -46,9 +46,9 @@ $jm->step();
 
 #diag Dumper ($jm);
 diag $jm->iterate_workspace()->select('id', 'type', 'desc')->table->show_decl;
-diag $jm->{coderack}->iterate_current()->select('type', 'desc', 'posted', 'urgency')->table->show_decl;
+diag $jm->{coderack}->iterate_current()->select('type', 'origin', 'desc', 'posted', 'urgency')->table->show_decl;
 diag '';
-diag $jm->{coderack}->iterate_enactment()->select('type', 'desc', 'run', 'posted', 'urgency', 'outcome', 'rule')->table->show_decl;
+diag $jm->{coderack}->iterate_enactment()->select('type', 'desc', 'run', 'origin', 'posted', 'urgency', 'outcome', 'rule')->table->show_decl;
 
 done_testing();
 

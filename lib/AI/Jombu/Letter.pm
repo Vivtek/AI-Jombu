@@ -111,7 +111,7 @@ sub handle_letter_spark {
    return $cr->fail   ('either glom')  if $either{glom}  && $ts->decide_failure (90);
    
    my $spark = $ws->add_link ('spark', {from=>$let1, to=>$let2});
-   $ts->post_codelet ('spark-checker', $cr->{desc}, $spark);
+   $ts->post_codelet ('spark-checker', $cr, $spark);
    return $cr->fire ('added spark ' . $spark->get_id());
 }
 
