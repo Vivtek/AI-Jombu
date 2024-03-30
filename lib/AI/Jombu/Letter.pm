@@ -4,9 +4,14 @@ use 5.006;
 use strict;
 use warnings;
 
+use parent qw(AI::TerracedScan::Type);
+use AI::TerracedScan::Codelet;
+use Carp;
+
+
 =head1 NAME
 
-AI::Jombu::Letter - The 'letter' semantic unit, and the codelets that work with it
+AI::Jombu::Letter - The 'letter' semantic unit type, and the codelets that work with it
 
 =head1 VERSION
 
@@ -16,117 +21,112 @@ Version 0.01
 
 our $VERSION = '0.01';
 
+# Values for "letter"
+our $name = 'letter';
+our @codelets = qw( letter-spark );
+sub name { return $name; }
+sub codelets { return @codelets; }
 
-=head1 SYNOPSIS
 
+=head1 SCOUTING
 
-=head1 SUBROUTINES/METHODS
+Each semunit type class is asked periodically to propose some scout codelets. This is a judgment made on the basis of the current state of the Workspace and Coderack,
+but how it's done is left entirely up to the type. We'll probably end up with some stock strategies that types can use; for now I don't know enough to propose any.
+If the type has no scouts to propose, leave this out; the superclass's method just returns an empty list.
 
-=head2 new (type, id, [frame], [data])
-
-Creates a new unit of the named type, and optionally assigns its content. You will almost never need to do this; normally you'll parse a descriptive language into
-a workspace structure. If the unit is a sensory unit, it represents data outside the memory, and C<data> is used to specify it.
-
-=cut
-
-sub new {
-   my ($class, $type, $id, $frame, $data) = @_;
-   my $self = bless ({}, $class);
-   $self->{type} = $type;
-   $self->{frame} = defined $frame ? { %$frame } : {};
-   $self->set_data ($data) if defined $data;
-   $self->{id} = ref $id ? $id->get_id() : $id if defined $id;
-   $self;
-}
-
-=head2 set (slot, value), add (slot, value), del (slot, value)
-
-A named slot can have one or more values (if the latter, they're just a list). The C<set> method sets a single value; C<add> adds a value to the list and
-C<del> removes an existing value from the list. Values are other units, so there is always exact identity.
-
-If the type prohibits the value named, this should croak.
+=head2 propose_scouts (scan)
 
 =cut
 
-sub set {
-   my ($self, $slot, $value) = @_;
-   $self->{frame}->{$slot} = $value;
+sub propose_scouts {
+   my ($class, $ts) = @_;
+   post ($ts, 'letter-spark');
 }
-sub add {
-   my ($self, $slot, $value) = @_;
-   if (not $self->has_slot ($slot)) {
-      $self->{frame}->{$slot} = { $value => $value };
-   } elsif (ref ($self->{frame}->{$slot}) eq 'HASH') {
-      $self->{frame}->{$slot}->{$value} = $value;
+
+=head1 CODELETS
+
+The method name of each codelet handler is just the name of the codelet. Recall that the active codelet itself is an entry in the Coderack action table.
+The codelet handler is given a link to the codelet action record and the current Workspace, and can:
+- fizzle if it's no longer a valid action
+- make changes to the Workspace, usually by adding a unit or changing the type of an existing unit
+
+=head2 post (scan, codelet-type, [parms])
+
+Given the (string) name of a codelet and an optional list of codelet parameters, post a codelet of that name to the Coderack. This is type-specific.
+
+=cut
+
+sub post {
+   my $ts = shift;
+   my $cn = shift;
+   if ($cn eq 'letter-spark') {
+      post_letter_spark ($ts, @_);
    } else {
-      $self->{frame}->{$slot} = { $self->{frame}->{$slot} => $self->{frame}->{$slot}, $value => $value };
+      croak "unknown codelet type $cn [type 'letter']";
    }
 }
-sub del {
-   my ($self, $slot, $value) = @_;
-   return unless $self->has_slot ($slot);
-   delete $self->{frame}->{$slot}->{"$value"};
-}
 
-=head2 get (slot), has_slot (slot)
+=head2 letter-spark: post_letter_spark ( scan ), handle_letter_spark (scan, codelet-record)
 
-Gets either the single value or the arrayref of values for the named slot. Returns undef if the unit does not have this slot.
+When called, C<letter-spark> chooses two letters at random, checks them for enclosure (which could be grounds for failure), and if it seems kosher, proposes a bond.
+The bond proposal unit is called a "spark". Then we also post a new codelet, a "spark-checker" bound to the spark unit.
+
+The codelet has no parameters.
 
 =cut
 
-sub get {
-   my ($self, $slot) = @_;
-   return undef unless $self->has_slot ($slot);
-   if (ref ($self->{frame}->{$slot}) eq 'HASH') {
-      return [ values %{$self->{frame}->{$slot}} ];
+sub post_letter_spark {
+   my $ts = shift;
+   AI::TerracedScan::Codelet->post_new ($ts, {
+      type => 'letter',
+      name => 'letter-spark',
+      callback => sub { my $cr = shift; return sub { handle_letter_spark ( $ts, $cr ); }; },
+   });
+}
+sub handle_letter_spark {
+   my ($ts, $cr) = @_;
+   
+   my $ws = $ts->{workspace};
+   my @units = $ws->choose_units ('letter', 2);
+   
+   $cr->{desc} = $ts->describe_unit ($units[0]->[2]) . '-' . $ts->describe_unit ($units[1]->[2]);
+   my ($let1, $let2) =  map { $_->[2]->get_id() } @units;
+   
+   my %mutual = map { ($_, 1) } $ws->container_types ($let1, $let2);
+   my %either;
+   foreach my $t ($ws->container_types ($let1)) {
+      $either{$t} = 1;
    }
-   return $self->{frame}->{$slot};
-}
-sub has_slot {
-   my ($self, $slot) = @_;
-   defined ($self->{frame}->{$slot});
+   foreach my $t ($ws->container_types ($let2)) {
+      $either{$t} = 1;
+   }
+
+   return $cr->fizzle ('mutual spark') if $mutual{spark};
+   return $cr->fail   ('either spark') if $either{spark} && $ts->decide_failure (10);
+   
+   return $cr->fizzle ('mutual bond')  if $mutual{bond};
+   return $cr->fail   ('either bond')  if $either{bond}  && $ts->decide_failure (50);
+
+   return $cr->fizzle ('mutual glom')  if $mutual{glom};
+   return $cr->fail   ('either glom')  if $either{glom}  && $ts->decide_failure (90);
+   
+   my $spark = $ws->add_link ('spark', {from=>$let1, to=>$let2});
+   $ts->post_codelet ('spark-checker', $cr->{desc}, $spark);
+   return $cr->fire ('added spark ' . $spark->get_id());
 }
 
-=head2 get_type()
+=head2 describe_unit (unit)
 
-Gets the type of the unit.
+Provides a brief descriptive string for a letter unit.
 
 =cut
 
-sub get_type {
-   my ($self) = @_;
-   $self->{type};
+sub describe_unit {
+   my ($self, $unit) = @_;
+   return $unit->{data} if defined $unit;
+   return $self->{data};
 }
 
-=head2 get_data(), set_data()
-
-If this is a sensory unit (if it points to external data), this returns that data.
-
-=cut
-
-sub get_data {
-   my ($self) = @_;
-   $self->{data};
-}
-sub set_data {
-   my ($self, $data) = @_;
-   $self->{data} = $data;
-}
-
-=head2 get_id(), set_id()
-
-Gets or sets the ID of the unit.
-
-=cut
-
-sub get_id {
-   my ($self) = @_;
-   $self->{id};
-}
-sub set_id {
-   my ($self, $data) = @_;
-   $self->{id} = $data;
-}
 
 =head1 AUTHOR
 
@@ -134,40 +134,15 @@ Michael Roberts, C<< <michael at vivtek.com> >>
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-ai-terracedscan at rt.cpan.org>, or through
-the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=AI-TerracedScan>.  I will be notified, and then you'll
+Please report any bugs or feature requests to C<bug-ai-jombu at rt.cpan.org>, or through
+the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=AI-Jombu>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
-
-
-
 
 =head1 SUPPORT
 
 You can find documentation for this module with the perldoc command.
 
     perldoc AI::Jombu::Letter
-
-
-You can also look for information at:
-
-=over 4
-
-=item * RT: CPAN's request tracker (report bugs here)
-
-L<https://rt.cpan.org/NoAuth/Bugs.html?Dist=AI-Jombu>
-
-=item * CPAN Ratings
-
-L<https://cpanratings.perl.org/d/AI-Jombu>
-
-=item * Search CPAN
-
-L<https://metacpan.org/release/AI-Jombu>
-
-=back
-
-
-=head1 ACKNOWLEDGEMENTS
 
 
 =head1 LICENSE AND COPYRIGHT

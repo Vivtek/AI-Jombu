@@ -6,6 +6,13 @@ use warnings;
 
 use parent qw(AI::TerracedScan);
 
+use AI::Jombu::Scene;
+
+use AI::Jombu::Letter;
+use AI::Jombu::Spark;
+
+use Path::Tiny;
+
 =head1 NAME
 
 AI::Jombu - Jombu is not Jumbo
@@ -35,7 +42,13 @@ Jombu is called with a string containing the initial jumble.
 sub new {
    my ($class, $init) = @_;
    my $self = bless ({}, $class);
-   $self->_init_({typereg => {'letter', 'AI::Jombu::Letter',
+   $self->_init_({typereg => {'letter',     'AI::Jombu::Letter',
+                              'spark',      'AI::Jombu::Spark',
+                              #'bond',       'AI::Jombu::Bond',
+                              #'ccluster',   'AI::Jombu::ConsonantCluster',
+                              #'vcluster',   'AI::Jombu::VowelCluster',
+                              #'syllable',   'AI::Jombu::Syllable',
+                              #'wordoid',    'AI::Jombu::Wordoid',
                              },
                   init => $init
                  });
@@ -56,6 +69,18 @@ sub parse_setup {
    return Iterator::Records->new ($units, ['type', 'id', 'data', 'frame']);
 }
 
+=head2 setup_display (directory)
+
+If we're going to make use of the display animation scene, which outputs Pikchr, then it needs to be initialized before the run starts.
+This basically consists of specifying a directory where the SVG for each scene will be written.
+
+=cut
+
+sub setup_display {
+   my ($self, $directory) = @_;
+   $self->{scene} = AI::Jombu::Scene->new($self);
+   $self->{scene}->jombu_initialize (path ($directory));
+}
 
 
 =head1 AUTHOR
