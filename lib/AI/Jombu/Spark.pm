@@ -6,6 +6,8 @@ use warnings;
 
 use parent qw(AI::TerracedScan::Type);
 use AI::TerracedScan::Codelet;
+use AI::Jombu::Letter;
+use AI::Jombu::Chunkabet;
 use Carp;
 use Data::Dumper;
 
@@ -58,10 +60,17 @@ sub post {
 
 =head2 spark-checker: post_spark_checker ( scan ), handle_spark_checker (scan, codelet-record)
 
-When called, C<spark-checker> examines the spark it's bound to, and asks the chunkabet how good a bond the letter pair might be. If the pair isn't a valid bond
-at all, the codelet fails. Otherwise, it upgrades the spark to a bond, and bond scouts can then randomly choose it for further processing.
+The C<spark-checker> codelet's single parameter is the spark it's bound to, and its origin is the scout that created it along with its spark.
 
-The codelet's single parameter is the spark it's bound to.
+When called, it examines the spark it's bound to, and asks the chunkabet how good a bond the letter pair might be. If the pair isn't a valid bond
+at all, the codelet fails. Otherwise, what happens depends on the bonding status of the letters it pairs:
+
+- If both unbonded, it simply promotes the spark to a bond
+- If it extends from a singly bonded letter to an unbonded letter in the same direction as the bond, it promotes the spark to a bond, extending the bond chain
+- If it extends from an unbonded letter to a singly bonded letter, again in the same direction as the bond, it promotes the spark and extends the bond chain
+- If both letters are bonded, either is doubly bonded, or if the spark and existing single bond are in incompatible directions, it will roll the dice to see if
+  it will dissolve all the existing incompatible bonds and promote its spark to bond status. This dice roll's canonical probability depends on relative bond quality
+  and, like all the random distributions, it is skewed by the global temperature. If the die roll fails, the spark is killed and the existing bonds left intact.
 
 =cut
 
@@ -89,9 +98,76 @@ sub handle_spark_checker {
    
    my $ws = $ts->{workspace};
    my $spark = $cr->{frame}->{spark};
-   $ws->kill_unit ($spark->get_id);
+   my ($from_bonded, @from_bonds) = @{ AI::Jombu::Letter::bonded ($spark->{frame}->{from}) };
+   my ($to_bonded,   @to_bonds)   = @{ AI::Jombu::Letter::bonded ($spark->{frame}->{to}) };
    
-   $cr->fail ('temp fail #' . $spark->get_id());
+   # What proposed bond are we testing?
+   my $proposal;
+   my @bonds_for_dissolution = ();
+   if (($from_bonded eq 'no'         and $to_bonded eq 'single-out') or
+       ($from_bonded eq 'single-out' and $to_bonded eq 'no')) {  # The only two cases in which we propose a triple-letter chunk consisting of a two-bond chain
+      $proposal = $to_bonded eq 'single-out' ? $ts->describe_unit($spark->{frame}->{from}) . $ts->describe_unit($to_bonds[0])            :
+                                               $ts->describe_unit($from_bonds[0])           . $ts->describe_unit($spark->{frame}->{from});
+      # And no bonds will be dissolved in this case
+   } else {
+      $proposal = $ts->describe_unit($spark->{frame}->{from}) . $ts->describe_unit($spark->{frame}->{to});
+      @bonds_for_dissolution = (@from_bonds, @to_bonds); # All existing bonds will be dissolved in all other cases (including the degenerate case of two free letters)
+   }
+   $proposal =~ s/-//g; # Remove any extraneous dashes from the bond name
+   
+   my $felicity = AI::Jombu::Chunkabet::chunk_felicity ($proposal);
+   #print STDERR "felicity of $proposal is $felicity";
+
+   # If our proposed bond is barred ('no') then let's just quit now while we're ahead   
+   if ($felicity eq 'no') {
+      $ws->kill_unit ($spark->get_id);
+      return $cr->fail ("bad chunk '$proposal'");
+   }
+   
+   printf ("Looks like we're going ahead with $proposal ($from_bonded/$to_bonded); %d bonds will be dissolved\n", scalar @bonds_for_dissolution);
+   # If it's not immediately terrible, let's compare it to what would be dissolved, and probabilistically decide whether to proceed.
+   my @to_beat = map { $_->{chunk} } @bonds_for_dissolution;
+   my $stronger = 1;
+   foreach my $existing (@to_beat) {
+      if (not AI::Jombu::Chunkabet::chunk_beats ($felicity, AI::Jombu::Chunkabet::chunk_felicity($existing))) {
+         $stronger = 0;
+         last;
+      }
+   }
+   if ($stronger) { # There should probably be a stochastic element to this decision but I'm not sure how to bias it
+      # Reset all letters in bonds to be dissolved to null chunk, null felicity
+      # Reset all bonds to be dissolved to null chunk, null felicity
+      # Kill all bonds to be dissolved
+      foreach my $bond (@bonds_for_dissolution) {
+         $bond->{frame}->{from}->{chunk} = undef;
+         $bond->{frame}->{from}->{chunk_quality} = undef;
+         $bond->{frame}->{to}->{chunk} = undef;
+         $bond->{frame}->{to}->{chunk_quality} = undef;
+         
+         $bond->{chunk} = undef;
+         $bond->{chunk_quality} = undef;
+         
+         $ws->kill_unit ($bond->get_id);
+      }
+      
+      # Set chunk and felicity in letters being bonded and in spark, as well as far bond and letter if we're extending a chain
+      foreach my $unit ($spark, @from_bonds, @to_bonds) {
+         $unit->{frame}->{from}->{chunk} = $proposal;
+         $unit->{frame}->{from}->{chunk_quality} = $felicity;
+         $unit->{frame}->{to}->{chunk} = $proposal;
+         $unit->{frame}->{to}->{chunk_quality} = $felicity;
+         
+         $unit->{chunk} = $proposal;
+         $unit->{chunk_quality} = $felicity;
+      }
+      
+      # Promote spark to bond
+      $ws->promote_unit ($spark->get_id, 'bond');
+      return $cr->fire ("chunk '$proposal' ($felicity) bonded");
+   } else {
+      $ws->kill_unit ($spark->get_id);
+      return $cr->fail ("chunk '$proposal' ($felicity) did not beat " . join (', ', @to_beat));
+   }
 }
 
 =head2 describe_unit (unit)

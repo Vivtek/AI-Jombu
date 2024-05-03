@@ -127,6 +127,68 @@ sub describe_unit {
    return $self->{data};
 }
 
+=head1 STRUCTURAL QUERIES
+
+I have a sneaking suspicion that this aspect of semantic units - defining actual semantic queries - is going to be important, so I'm highlighting this with
+a header-1 section.
+
+=head2 bonded()
+
+Asks the letter about its bonding environment. The response is an arrayref consisting of a string response and zero, one, or two bonds, as follows:
+
+=over
+
+=item no
+
+=item single-in = single bond, incoming (this letter is the "to" in the bond), with the bond
+
+=item single-out = single bond, outgoing (this letter is the "from" in the bond), with the bond
+
+=item chain-in = single bond, incoming, but the end of a chain, with two bonds: first the near one, then the far one
+
+=item chain-out = single bond, outgoing, but the start of a chain, with two bonds: first the near one, then the far one
+
+=item chain-middle = doubly bonded letter (this letter is bonded to two other letters in a chain), with two bonds: first the incoming, then the outgoing
+
+=back
+
+=cut
+
+sub bonds {
+   my ($letter) = @_;
+   grep { $_->get_type() eq 'bond' } $letter->list_in();
+}
+sub bonded {
+   my ($letter) = @_;
+   
+   my @list_in = $letter->list_in();
+   my @bonds = bonds($letter);
+   printf ("in bonded for %s and see %d in list_in, %d of which bonds\n", $letter->{data}, scalar $letter->list_in(), scalar bonds($letter));
+   if (@list_in > 1) {
+      printf (" --> %s\n", join (', ', map { $_->{type} } @list_in));
+   }
+   return ['no'] unless @bonds;
+   
+   if (scalar @bonds == 2) {
+      if ($bonds[0]->{frame}->{to} == $letter) {
+         return ['chain-middle', $bonds[0], $bonds[1] ];
+      } else {
+         return ['chain-middle', $bonds[1], $bonds[0] ];
+      }
+   }
+   
+   if ($bonds[0]->{frame}->{to} == $letter) {
+      my @other_bonds = bonds($bonds[0]->{frame}->{from});
+      return ['single-in', $bonds[0] ] if scalar @other_bonds == 1;
+      return ['chain-in',  $bonds[0], $other_bonds[0] == $bonds[0] ? $other_bonds[1] : $other_bonds[0] ];
+   } else {
+      my @other_bonds = bonds($bonds[0]->{frame}->{to});
+      return ['single-out', $bonds[0] ] if scalar @other_bonds == 1;
+      return ['chain-out',  $bonds[0], $other_bonds[0] == $bonds[0] ? $other_bonds[1] : $other_bonds[0] ];
+   }
+   
+   die 'something is screwed up with bonds';
+}
 
 =head1 AUTHOR
 

@@ -28,7 +28,9 @@ our %chunkabet = (
    "ay-final"      => "good",
    "ay-middle"     => "meh",
    "b-initial"     => "wow",
+   "ba-initial"    => "strong", # added manually 2024-04-25
    "bl-initial"    => "ok",
+   "bo-initial"    => "strong", # added manually 2024-04-25
    "c-final"       => "ok",
    "c-initial"     => "strong",
    "ce-final"      => "meh",
@@ -88,6 +90,7 @@ our %chunkabet = (
    "nt-final"      => "good",
    "o-final"       => "wow",
    "o-initial"     => "wow",
+   "oa-middle"     => "wow", # added manually 2024-04-01
    "o-middle"      => "wow",
    "oe-middle"     => "meh",
    "oo-final"      => "meh",
@@ -183,6 +186,7 @@ True if C<a> beats C<b>. Later, we might want to do some kind of fuzzy ordering 
 
 sub chunk_beats {
    my ($a, $b) = @_;
+
    return 0 if $a eq $b;     # A fails a challenge to B if they're equal
    
    return 1 if $a eq 'wow';

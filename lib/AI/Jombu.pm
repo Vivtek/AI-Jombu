@@ -10,6 +10,7 @@ use AI::Jombu::Scene;
 
 use AI::Jombu::Letter;
 use AI::Jombu::Spark;
+use AI::Jombu::Bond;
 
 use Path::Tiny;
 
@@ -44,9 +45,8 @@ sub new {
    my $self = bless ({}, $class);
    $self->_init_({typereg => {'letter',     'AI::Jombu::Letter',
                               'spark',      'AI::Jombu::Spark',
-                              #'bond',       'AI::Jombu::Bond',
-                              #'ccluster',   'AI::Jombu::ConsonantCluster',
-                              #'vcluster',   'AI::Jombu::VowelCluster',
+                              'bond',       'AI::Jombu::Bond',
+                              #'glom',       'AI::Jombu::Glom',
                               #'syllable',   'AI::Jombu::Syllable',
                               #'wordoid',    'AI::Jombu::Wordoid',
                              },
@@ -80,6 +80,8 @@ sub setup_display {
    my ($self, $directory) = @_;
    $self->{scene} = AI::Jombu::Scene->new($self);
    $self->{scene}->jombu_initialize (path ($directory));
+   $self->{scene}->add_label (2, 0, sub { sprintf ('codelets: %d, %0.3fs, %0.3fcps', $self->ticks(), $self->time(), $self->cps()); });
+
 }
 
 
