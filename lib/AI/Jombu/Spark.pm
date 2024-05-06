@@ -105,9 +105,9 @@ sub handle_spark_checker {
    my $proposal;
    my @bonds_for_dissolution = ();
    if (($from_bonded eq 'no'         and $to_bonded eq 'single-out') or
-       ($from_bonded eq 'single-out' and $to_bonded eq 'no')) {  # The only two cases in which we propose a triple-letter chunk consisting of a two-bond chain
+       ($from_bonded eq 'single-in'  and $to_bonded eq 'no')) {  # The only two cases in which we propose a triple-letter chunk consisting of a two-bond chain [sgl]
       $proposal = $to_bonded eq 'single-out' ? $ts->describe_unit($spark->{frame}->{from}) . $ts->describe_unit($to_bonds[0])            :
-                                               $ts->describe_unit($from_bonds[0])           . $ts->describe_unit($spark->{frame}->{from});
+                                               $ts->describe_unit($from_bonds[0])           . $ts->describe_unit($spark->{frame}->{to});  # [3lc]
       # And no bonds will be dissolved in this case
    } else {
       $proposal = $ts->describe_unit($spark->{frame}->{from}) . $ts->describe_unit($spark->{frame}->{to});
@@ -124,7 +124,6 @@ sub handle_spark_checker {
       return $cr->fail ("bad chunk '$proposal'");
    }
    
-   printf ("Looks like we're going ahead with $proposal ($from_bonded/$to_bonded); %d bonds will be dissolved\n", scalar @bonds_for_dissolution);
    # If it's not immediately terrible, let's compare it to what would be dissolved, and probabilistically decide whether to proceed.
    my @to_beat = map { $_->{chunk} } @bonds_for_dissolution;
    my $stronger = 1;

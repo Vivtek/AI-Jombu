@@ -34,14 +34,14 @@ appropriate semunit types (and their codelets) and other optional things like a 
 
 =head1 SUBROUTINES/METHODS
 
-=head2 new (initial string)
+=head2 new (initial string, parameters)
 
-Jombu is called with a string containing the initial jumble.
+Jombu is called with a string containing the initial jumble, and an optional hashref of parameters.
 
 =cut
 
 sub new {
-   my ($class, $init) = @_;
+   my ($class, $init, $parameters) = @_;
    my $self = bless ({}, $class);
    $self->_init_({typereg => {'letter',     'AI::Jombu::Letter',
                               'spark',      'AI::Jombu::Spark',
@@ -50,7 +50,8 @@ sub new {
                               #'syllable',   'AI::Jombu::Syllable',
                               #'wordoid',    'AI::Jombu::Wordoid',
                              },
-                  init => $init
+                  init => $init,
+                  parameters => $parameters,
                  });
 }
 

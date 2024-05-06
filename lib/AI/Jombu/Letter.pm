@@ -40,7 +40,7 @@ If the type has no scouts to propose, leave this out; the superclass's method ju
 
 sub propose_scouts {
    my ($class, $ts) = @_;
-   post ($ts, 'letter-spark');
+   post ($ts, 'letter-spark') if $ts->{coderack}->count('letter-spark') < $ts->parameter('letter-scout-instances', 1); # Limit letter sparks to 1 on the rack at any time (which seems to work fine)
 }
 
 =head1 CODELETS
@@ -161,12 +161,7 @@ sub bonds {
 sub bonded {
    my ($letter) = @_;
    
-   my @list_in = $letter->list_in();
    my @bonds = bonds($letter);
-   printf ("in bonded for %s and see %d in list_in, %d of which bonds\n", $letter->{data}, scalar $letter->list_in(), scalar bonds($letter));
-   if (@list_in > 1) {
-      printf (" --> %s\n", join (', ', map { $_->{type} } @list_in));
-   }
    return ['no'] unless @bonds;
    
    if (scalar @bonds == 2) {
