@@ -7,8 +7,10 @@ use Data::Dumper;
 
 use AI::Jombu;
 use AI::Jombu::Letter;
+diag (1);
 
 my $jm = AI::Jombu->new ('atob');
+diag ('..');
 
 isa_ok ($jm, 'AI::Jombu');
 isa_ok ($jm, 'AI::TerracedScan');

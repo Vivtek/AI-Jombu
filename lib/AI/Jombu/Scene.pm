@@ -8,6 +8,7 @@ use parent qw(AI::TerracedScan::Scene);
 use Carp;
 use Data::Dumper;
 use Path::Tiny;
+use Data::Tab;
 
 =head1 NAME
 
@@ -35,12 +36,15 @@ sub jombu_initialize {
    my $self = shift;
    $self->{frame_no} = 0;
    $self->{directory} = shift;
+   $self->{log} = Data::Tab->new ([], headers => ['action', 'id', 'data']);
    
    my $it = $self->{scan}->iterate_workspace()->where(sub {$_[0] eq 'letter'}, 'type')->iter;
    while (my $row = $it->()) {
       my ($id, $type, $unit, $desc) = @$row;
       my $x = rand(4);
       my $y = rand(4);
+      $self->log ('letter', $id, $desc);
+      $self->log ('locate', $id, sprintf ("x=%f,y=%f", $x, $y));
       $self->{units}->{$id} = {
          type => $type,
          unit => $unit,
@@ -53,7 +57,14 @@ sub jombu_initialize {
       };
       push @{$self->{unit_list}}, $id;
    }
+   
    #$self->write_frame();
+}
+
+sub log {
+   my ($self, $action, $id, $data) = @_;
+   return unless $self->{log};
+   $self->{log}->add_row ([$action, $id, $data]);
 }
 
 =head1 DISPLAYING AN ACTION
@@ -87,13 +98,17 @@ sub display_spark {
       my $to = $unit->{frame}->{to}->get_id();
       
       $self->{units}->{$id}->{pik} = "arrow dashed from L$from to 1/2 way between L$from and L$to chop";
+      $self->log ('spark', 'half', sprintf ("from=%s,to=%s", $from, $to));
       $self->write_frame();
       $self->{units}->{$id}->{pik} = "arrow dashed from L$from to L$to chop";
+      $self->log ('spark', 'full', sprintf ("from=%s,to=%s", $from, $to));
       $self->write_frame();
    } elsif ($action eq 'kill') {
       my $from = $unit->{frame}->{from}->get_id();
       my $to = $unit->{frame}->{to}->get_id();
-      $self->{units}->{$id}->{pik} = "line thin color 0xf0f0f0 from L$from to L$to chop";
+      #$self->{units}->{$id}->{pik} = "line thin color 0xf0f0f0 from L$from to L$to chop";
+      $self->{units}->{$id}->{pik} = "line invisible from L$from to L$to chop";
+      $self->log ('spark', 'kill', sprintf ("from=%s,to=%s", $from, $to));
       $self->write_frame();
    }
 }
@@ -107,6 +122,8 @@ sub display_bond {
 
       my $from = $unit->{frame}->{from}->get_id();
       my $to = $unit->{frame}->{to}->get_id();
+
+      $self->log ('bond', 'full', sprintf ("from=%s,to=%s", $from, $to));
       
       $self->{units}->{$id}->{pik} = "arrow from L$from to L$to chop";
       $self->write_frame();
@@ -116,6 +133,7 @@ sub display_bond {
       my $from = $unit->{frame}->{from}->get_id();
       my $to = $unit->{frame}->{to}->get_id();
       $self->{units}->{$id}->{pik} = "";
+      $self->log ('bond', 'kill', sprintf ("from=%s,to=%s", $from, $to));
       $self->write_frame();
    }
 }
@@ -136,6 +154,9 @@ sub make_bond_mover {
    
    my $target_from_x = $centroid_x - 0.4;
    my $target_to_x   = $centroid_x + 0.4;
+
+   $self->log ('move', $from, sprintf ("x=%f,y=%f,frames=4", $target_from_x, $centroid_y));
+   $self->log ('move', $to,   sprintf ("x=%f,y=%f,frames=4", $target_to_x, $centroid_y));
    
    my $step = 0;
    my $frames = 4;
@@ -178,9 +199,13 @@ sub write_frame {
    }
    foreach my $label (@{$self->{labels}}) {
       my ($x, $y, $fn) = @$label;
+      my $text =  $fn->();
+      $self->log ('label', '', sprintf ("[%f,%f]:%s", $x, $y, $text));
       print $svg '"' . $fn->() . '" at ' . "$x, $y\n";
    }
    close ($svg);   
+
+   $self->log ('frame', $self->{frame_no}, '');
 }
 
 =head1 AUTHOR
