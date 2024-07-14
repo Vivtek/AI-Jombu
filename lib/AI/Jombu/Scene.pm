@@ -45,16 +45,20 @@ sub jombu_initialize {
       my $y = rand(4);
       $self->log ('letter', $id, $desc);
       $self->log ('locate', $id, sprintf ("x=%f,y=%f", $x, $y));
-      $self->{units}->{$id} = {
-         type => $type,
-         unit => $unit,
-         desc => $desc,
-         x_c => $x,
-         y_c => $y,
-         label => "L$id",
-         pik => "L$id: circle \"$desc\" at $x, $y",
-         live => 1,
-      };
+      
+      $self->add_unit ($id, $type, $unit, $desc);
+      $self->locate_unit ($id, $x, $y);
+
+      #$self->{units}->{$id} = {
+      #   type => $type,
+      #   unit => $unit,
+      #   desc => $desc,
+      #   x_c => $x,
+      #   y_c => $y,
+      #   label => "L$id",
+      #   pik => "L$id: circle \"$desc\" at $x, $y",
+      #   live => 1,
+      #};
       push @{$self->{unit_list}}, $id;
    }
    
@@ -65,6 +69,144 @@ sub log {
    my ($self, $action, $id, $data) = @_;
    return unless $self->{log};
    $self->{log}->add_row ([$action, $id, $data]);
+}
+
+sub replay {
+   my ($self, $directory, $action_iterator) = @_;
+   $self->{frame_no} = 0;
+   $self->{directory} = $directory;
+   
+   my $it = $action_iterator->iter;
+   while (my $row = $it->()) {
+      my ($action, $id, $data) = @$row;
+      $id =~ s/^ *//; # Clean up for some formatting issues
+      if      ($action eq 'letter') {
+         $self->add_unit ($id, 'letter', undef, $data);
+      } elsif ($action eq 'glom') {
+         $self->add_unit ($id, 'glom', undef, $data);
+      } elsif ($action eq 'locate') {
+         my $p = unpack_data ($data);
+         $self->locate_unit ($id, $p->{x}, $p->{y});
+
+      } elsif ($action eq 'f-loc') {
+         my $p = unpack_data ($data);
+         $self->set ($id, 'x-old', $self->get ($id, 'x_c')) unless defined $self->get ($id, 'x-old');
+         $self->set ($id, 'y-old', $self->get ($id, 'y_c')) unless defined $self->get ($id, 'y-old');
+         my $x = $self->get ($id, 'x-old');
+         my $y = $self->get ($id, 'y-old');
+         $self->set ($id, 'x_c', $x + ($p->{x} - $x) * $p->{r});
+         $self->set ($id, 'y_c', $y + ($p->{y} - $y) * $p->{r});
+         $self->gen_pik ($id);
+
+      } elsif ($action eq 'spark') {
+         $self->add_unit ($id, 'spark', undef, ''); # These semantics are a little cockeyed
+         $self->set_data ($id, $data);
+      } elsif ($action eq 'spark-status') {
+         $self->{units}->{$id}->{status} = $data;
+         $self->gen_pik ($id);
+      } elsif ($action eq 'spark-kill') {
+         $self->{units}->{$id}->{status} = 'dead';
+         $self->set ($id, 'pik', '');
+         
+      } elsif ($action eq 'promote') {
+         $self->set ($id, 'type', $data);
+         $self->gen_pik ($id);
+      } elsif ($action eq 'kill') {
+         $self->set ($id, 'status', 'dead');
+         $self->set ($id, 'pik',    '');
+      } elsif ($action eq 'move') {
+         my $p = unpack_data ($data);
+         $self->start_process ($id, $self->make_mover ($id, $p->{x}, $p->{y}, $p->{frames}));
+         
+      } elsif ($action eq 'label') {
+         if ($data =~ /\[(.*),(.*)\]:(.*)$/) {
+            push @{$self->{framelabels}}, [$1, $2, $3];
+         }
+
+
+      } elsif ($action eq 'frame') {
+         $self->write_frame();
+      }
+   }
+}
+
+sub unpack_data {
+   my $p = {};
+   foreach my $d (split /,/, shift) {
+      my ($var, $val) = split /=/, $d;
+      $p->{$var} = $val;
+   }
+   $p;
+}
+
+sub get {
+   my ($self, $id, $var) = @_;
+   $self->{units}->{$id}->{$var};
+}
+sub set {
+   my ($self, $id, $var, $val) = @_;
+   $self->{units}->{$id}->{$var} = $val;
+}
+sub set_data {
+   my ($self, $id, $data) = @_;
+   my $p = unpack_data ($data);
+   foreach my $k (keys %$p) {
+      $self->set ($id, $k, $p->{$k});
+   }
+}
+
+
+sub label_from_id {
+   my ($self, $id) = @_;
+   return "L$id";
+}
+sub pik_from_id {
+   my ($self, $id) = @_;
+   my $type = $self->{units}->{$id}->{type};
+   if      ($type eq 'letter') {
+      return sprintf ("L$id: circle \"%s\" at %s, %s", $self->{units}->{$id}->{desc}, $self->{units}->{$id}->{x_c}, $self->{units}->{$id}->{y_c});
+   } elsif ($type eq 'spark') {
+      if ($self->{units}->{$id}->{status} eq 'half') {
+         return sprintf ("arrow dashed from L%s to 1/2 way between L%s and L%s chop",
+                         $self->{units}->{$id}->{from}, $self->{units}->{$id}->{from}, $self->{units}->{$id}->{to});
+      } else {
+         return sprintf ("arrow dashed from L%s to L%s chop",
+                         $self->{units}->{$id}->{from}, $self->{units}->{$id}->{to});
+      }
+   } elsif ($type eq 'bond') {
+      return sprintf ("arrow from L%s to L%s chop",
+                      $self->{units}->{$id}->{from}, $self->{units}->{$id}->{to});
+   } elsif ($type eq 'glom') {
+      return sprintf ("box thick \"%s\" width 0.5 height 0.25 radius 4px at %s, %s", $self->{units}->{$id}->{desc}, $self->{units}->{$id}->{x_c}, $self->{units}->{$id}->{y_c});
+   }
+}
+
+sub gen_pik {
+   my ($self, $id) = @_;
+   $self->{units}->{$id}->{pik} = $self->pik_from_id ($id);
+}
+
+sub add_unit {
+   my ($self, $id, $type, $unit, $desc) = @_;
+   
+   $self->{units}->{$id} = {
+      type => $type,
+      unit => $unit,
+      desc => $desc,
+      label => '',
+      pik => '', # Unit is invisible until a location is assigned
+      live => 1,
+   };
+   $self->{units}->{$id}->{label} = $self->label_from_id($id);
+   push @{$self->{unit_list}}, $id;
+}
+sub locate_unit {
+   my ($self, $id, $x, $y) = @_;
+   $self->set ($id, 'x_c', $x);
+   $self->set ($id, 'y_c', $y);
+   $self->set ($id, 'x-old', undef);
+   $self->set ($id, 'y-old', undef);
+   $self->gen_pik ($id);
 }
 
 =head1 DISPLAYING AN ACTION
@@ -92,23 +234,23 @@ sub display_spark {
    my ($self, $action, $id, $unit) = @_;
    
    if ($action eq 'add' or $action eq 'unkill') {
-      push @{$self->{unit_list}}, $id if $action eq 'add';
+      $self->add_unit ($id, 'spark', $unit, '') if $action eq 'add';
+      $self->set ($id, 'from', $unit->{frame}->{from}->get_id());
+      $self->set ($id, 'to',   $unit->{frame}->{to}->get_id());
+      $self->log ('spark', $id, sprintf ("from=%s,to=%s", $self->{units}->{$id}->{from}, $self->{units}->{$id}->{to}));
 
-      my $from = $unit->{frame}->{from}->get_id();
-      my $to = $unit->{frame}->{to}->get_id();
-      
-      $self->{units}->{$id}->{pik} = "arrow dashed from L$from to 1/2 way between L$from and L$to chop";
-      $self->log ('spark', 'half', sprintf ("from=%s,to=%s", $from, $to));
+      $self->set ($id, 'status', 'half');
+      $self->gen_pik ($id);
+      $self->log ('spark-status', $id, 'half');
       $self->write_frame();
-      $self->{units}->{$id}->{pik} = "arrow dashed from L$from to L$to chop";
-      $self->log ('spark', 'full', sprintf ("from=%s,to=%s", $from, $to));
+
+      $self->{units}->{$id}->{status} = 'full';      
+      $self->{units}->{$id}->{pik} = $self->pik_from_id ($id);
+      $self->log ('spark-status', $id, 'full');
       $self->write_frame();
    } elsif ($action eq 'kill') {
-      my $from = $unit->{frame}->{from}->get_id();
-      my $to = $unit->{frame}->{to}->get_id();
-      #$self->{units}->{$id}->{pik} = "line thin color 0xf0f0f0 from L$from to L$to chop";
-      $self->{units}->{$id}->{pik} = "line invisible from L$from to L$to chop";
-      $self->log ('spark', 'kill', sprintf ("from=%s,to=%s", $from, $to));
+      $self->{units}->{$id}->{pik} = "";
+      $self->log ('kill', $id, '');
       $self->write_frame();
    }
 }
@@ -116,25 +258,62 @@ sub display_spark {
 sub display_bond {
    my ($self, $action, $id, $unit) = @_;
    
-   if ($action eq 'add' or $action eq 'unkill' or $action eq 'promote') {
-      push @{$self->{unit_list}}, $id if $action eq 'add';
+   if ($action eq 'promote') {
       $self->{units}->{$id}->{type} = 'bond' if $action eq 'promote';
-
-      my $from = $unit->{frame}->{from}->get_id();
-      my $to = $unit->{frame}->{to}->get_id();
-
-      $self->log ('bond', 'full', sprintf ("from=%s,to=%s", $from, $to));
-      
-      $self->{units}->{$id}->{pik} = "arrow from L$from to L$to chop";
+      $self->log ('promote', $id, 'bond');
+      $self->gen_pik ($id);
       $self->write_frame();
       
-      $self->start_process ($id, $self->make_bond_mover ($id, $from, $to));
+      my ($new_from_x, $new_from_y, $new_to_x, $new_to_y) = $self->bond_move_calculate ($self->{units}->{$id}->{from}, $self->{units}->{$id}->{to});
+      $self->log ('move', $self->{units}->{$id}->{from}, sprintf ("x=%f,y=%f,frames=4", $new_from_x, $new_from_y));
+      $self->log ('move', $self->{units}->{$id}->{to},   sprintf ("x=%f,y=%f,frames=4", $new_to_x,   $new_to_y));
+      
+      $self->start_process ($self->{units}->{$id}->{from}, $self->make_mover ($self->{units}->{$id}->{to},   $new_to_x,   $new_to_y,   4));
+      $self->start_process ($self->{units}->{$id}->{to},   $self->make_mover ($self->{units}->{$id}->{from}, $new_from_x, $new_from_y, 4));
    } elsif ($action eq 'kill') {
-      my $from = $unit->{frame}->{from}->get_id();
-      my $to = $unit->{frame}->{to}->get_id();
       $self->{units}->{$id}->{pik} = "";
-      $self->log ('bond', 'kill', sprintf ("from=%s,to=%s", $from, $to));
+      $self->log ('kill', $id, '');
       $self->write_frame();
+   }
+}
+
+sub bond_move_calculate {
+   my ($self, $from, $to) = @_;
+
+   my $start_from_x = $self->{units}->{$from}->{x_c};
+   my $start_from_y = $self->{units}->{$from}->{y_c};
+
+   my $start_to_x   = $self->{units}->{$to}  ->{x_c};
+   my $start_to_y   = $self->{units}->{$to}  ->{y_c};
+   
+   my $centroid_x = ($start_from_x + $start_to_x) / 2;
+   my $centroid_y = ($start_from_y + $start_to_y) / 2;
+   
+   my $target_from_x = $centroid_x - 0.4;
+   my $target_to_x   = $centroid_x + 0.4;
+   
+   return ($target_from_x, $centroid_y, $target_to_x, $centroid_y);
+
+}
+
+sub make_mover {
+   my ($self, $id, $new_x, $new_y, $frames) = @_;
+   
+   my $step = 0;
+   my $start_x = $self->{units}->{$id}->{x_c};
+   my $start_y = $self->{units}->{$id}->{y_c};
+   
+   sub {
+      my $cur_x = $start_x + ($new_x - $start_x) * (0.15, 0.5, 0.85, 1.0)[$step];
+      my $cur_y = $start_y + ($new_y - $start_y) * (0.15, 0.5, 0.85, 1.0)[$step];
+      
+      $self->{units}->{$id}->{x_c} = $cur_x;
+      $self->{units}->{$id}->{y_c} = $cur_y;
+      $self->gen_pik ($id);
+      
+      $step += 1;
+      return 'done' if $step >= $frames;
+      return 'ok';
    }
 }
 
@@ -203,6 +382,11 @@ sub write_frame {
       $self->log ('label', '', sprintf ("[%f,%f]:%s", $x, $y, $text));
       print $svg '"' . $fn->() . '" at ' . "$x, $y\n";
    }
+   foreach my $label (@{$self->{framelabels}}) {
+      my ($x, $y, $text) = @$label;
+      print $svg '"' . $text . '" at ' . "$x, $y\n";
+   }
+   $self->{framelabels} = [];
    close ($svg);   
 
    $self->log ('frame', $self->{frame_no}, '');
